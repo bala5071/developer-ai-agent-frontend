@@ -14,12 +14,10 @@ export default function OutputPanel({ outputs, activeTab, setActiveTab }) {
   return (
     <div style={{ border: '1px solid #2e3250', borderRadius: '10px', overflow: 'hidden' }}>
 
-      // Tab buttons row
+      
       <div style={{ display: 'flex', background: '#1a1d27', borderBottom: '1px solid #2e3250' }}>
 
-        // .map() loops through the tabs array.
-        // For each tab object, it returns a button element.
-        // The "key" prop is REQUIRED — React uses it to track list items.
+        
         {tabs.map(tab => (
           <button
             key={tab.id}
@@ -41,14 +39,12 @@ export default function OutputPanel({ outputs, activeTab, setActiveTab }) {
         ))}
       </div>
 
-      // Content area — shows the text for whichever tab is active
+      
       <div style={{
         padding: '20px', minHeight: '250px', maxHeight: '400px', overflowY: 'auto',
         fontFamily: 'monospace', fontSize: '13px', lineHeight: '1.7',
         color: '#8b90a8', background: '#12151f', whiteSpace: 'pre-wrap',
       }}>
-        // Find the tab object whose id matches activeTab, then get its content.
-        // The ?. is "optional chaining" — if .find() returns undefined, this won't crash.
         {tabs.find(t => t.id === activeTab)?.content || (
           <span style={{ color: '#3d4265', fontStyle: 'italic' }}>
             Waiting for agent output…
