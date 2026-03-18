@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import AgentCard from './components/AgentCard';
 import OutputPanel from './components/OutputPanel';
 
@@ -285,6 +286,7 @@ export default function App() {
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
   return (
+    <>
     <div style={{ maxWidth: '860px', margin: '0 auto', padding: '40px 20px' }}>
 
       {/* ── HEADER ── */}
@@ -589,5 +591,7 @@ export default function App() {
         </div>
       )}
     </div>
+    <Analytics />
+    </>
   );
 }
