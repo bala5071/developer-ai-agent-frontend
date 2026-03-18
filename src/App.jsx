@@ -2,184 +2,603 @@ import { useState, useEffect, useRef } from 'react';
 import AgentCard from './components/AgentCard';
 import OutputPanel from './components/OutputPanel';
 
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+/* ─── CONSTANTS ──────────────────────────────────────────────────────────── */
 const API_URL = import.meta.env.VITE_API_URL;
-const POLL_INTERVAL_MS = 2000; // poll every 2 seconds
+const POLL_MS = 2000;
 
-// Maps the backend's status string → which agent card should be "active" (highlighted)
-// Your backend sends statuses like "planning", "developing", "testing" etc.
-// We translate those into the agent key names used in the cards.
 const STATUS_TO_AGENT = {
-  creating_repo:               'github',
-  planning:                    'architect',
-  waiting_plan_approval:       'architect',
-  developing:                  'developer',
-  testing:                     'tester',
-  deploying:                   'github',
-  waiting_review:              null,
-  processing_feedback:         'architect',
-  waiting_improvement_approval:'architect',
-  implementing:                'developer',
-  validating:                  'tester',
-  deploying_changes:           'github',
-  complete:                    null,
-  error:                       null,
+  creating_repo:                'github',
+  planning:                     'architect',
+  waiting_plan_approval:        'architect',
+  developing:                   'developer',
+  testing:                      'tester',
+  deploying:                    'github',
+  waiting_review:               null,
+  processing_feedback:          'architect',
+  waiting_improvement_approval: 'architect',
+  implementing:                 'developer',
+  validating:                   'tester',
+  deploying_changes:            'github',
+  complete:                     null,
+  error:                        null,
 };
 
-// Maps backend status → which agent cards should show "done" (green checkmark)
-// Once a phase passes, the card should stay green — not go back to idle.
-const STATUS_COMPLETED_AGENTS = {
-  developing:                  ['architect'],
-  testing:                     ['architect', 'developer'],
-  deploying:                   ['architect', 'developer', 'tester'],
-  waiting_review:              ['architect', 'developer', 'tester', 'github'],
-  processing_feedback:         ['architect', 'developer', 'tester', 'github'],
-  waiting_improvement_approval:['architect', 'developer', 'tester', 'github'],
-  implementing:                ['architect'],
-  validating:                  ['architect', 'developer'],
-  deploying_changes:           ['architect', 'developer', 'tester'],
-  complete:                    ['architect', 'developer', 'tester', 'github'],
+const STATUS_DONE_AGENTS = {
+  developing:                   ['architect'],
+  testing:                      ['architect', 'developer'],
+  deploying:                    ['architect', 'developer', 'tester'],
+  waiting_review:               ['architect', 'developer', 'tester', 'github'],
+  processing_feedback:          ['architect', 'developer', 'tester', 'github'],
+  waiting_improvement_approval: ['architect', 'developer', 'tester', 'github'],
+  implementing:                 ['architect'],
+  validating:                   ['architect', 'developer'],
+  deploying_changes:            ['architect', 'developer', 'tester'],
+  complete:                     ['architect', 'developer', 'tester', 'github'],
 };
 
-// The three statuses where the backend is PAUSED waiting for the user to respond
-const WAITING_STATUSES = new Set([
+const WAITING = new Set([
   'waiting_plan_approval',
   'waiting_review',
   'waiting_improvement_approval',
 ]);
 
+/* ─── INLINE STYLES (CSS-in-JS) ─────────────────────────────────────────── */
+const S = {
+  /* Layout */
+  page: {
+    minHeight: '100vh',
+    position: 'relative',
+  },
+
+  /* ── HERO ── */
+  hero: {
+    position: 'relative',
+    paddingTop: '72px',
+    paddingBottom: '56px',
+    textAlign: 'center',
+    overflow: 'hidden',
+  },
+  heroGlow: {
+    position: 'absolute', top: '-80px', left: '50%',
+    transform: 'translateX(-50%)',
+    width: '600px', height: '300px',
+    background: 'radial-gradient(ellipse at center, rgba(0,212,255,0.08) 0%, transparent 70%)',
+    pointerEvents: 'none',
+  },
+  wordmark: {
+    fontFamily: "'Orbitron', monospace",
+    fontSize: 'clamp(42px, 8vw, 88px)',
+    fontWeight: 900,
+    letterSpacing: '0.12em',
+    lineHeight: 1,
+    background: 'linear-gradient(135deg, #ffffff 0%, #00d4ff 50%, #0066ff 100%)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    backgroundClip: 'text',
+    animation: 'glow-in 0.8s ease both',
+    marginBottom: '16px',
+    display: 'block',
+  },
+  tagline: {
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: '15px',
+    fontWeight: 300,
+    color: '#5a6a80',
+    letterSpacing: '0.25em',
+    textTransform: 'uppercase',
+    animation: 'fadeUp 0.9s ease 0.2s both',
+    marginBottom: '48px',
+  },
+  divider: {
+    width: '1px',
+    height: '48px',
+    background: 'linear-gradient(to bottom, transparent, rgba(0,212,255,0.5), transparent)',
+    margin: '0 auto 48px',
+    animation: 'fadeUp 0.9s ease 0.3s both',
+  },
+
+  /* ── INPUT SECTION ── */
+  inputWrap: {
+    maxWidth: '760px',
+    margin: '0 auto',
+    padding: '0 24px 64px',
+    animation: 'fadeUp 1s ease 0.4s both',
+  },
+  inputCard: {
+    background: 'rgba(13, 18, 25, 0.8)',
+    border: '1px solid rgba(255,255,255,0.07)',
+    borderRadius: '16px',
+    padding: '28px',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+  },
+  label: {
+    display: 'block',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '11px',
+    letterSpacing: '0.15em',
+    textTransform: 'uppercase',
+    color: '#00d4ff',
+    marginBottom: '10px',
+  },
+  textarea: {
+    width: '100%',
+    padding: '16px',
+    fontSize: '15px',
+    fontFamily: "'DM Sans', sans-serif",
+    fontWeight: 300,
+    background: 'rgba(6,10,15,0.8)',
+    border: '1px solid rgba(255,255,255,0.07)',
+    borderRadius: '10px',
+    color: '#e8edf5',
+    resize: 'vertical',
+    lineHeight: 1.7,
+    boxSizing: 'border-box',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+    marginBottom: '16px',
+  },
+  row: {
+    display: 'flex',
+    gap: '12px',
+    marginBottom: '20px',
+  },
+  input: {
+    flex: 1,
+    padding: '12px 16px',
+    fontSize: '14px',
+    fontFamily: "'DM Sans', sans-serif",
+    background: 'rgba(6,10,15,0.8)',
+    border: '1px solid rgba(255,255,255,0.07)',
+    borderRadius: '10px',
+    color: '#e8edf5',
+    outline: 'none',
+  },
+  select: {
+    padding: '12px 16px',
+    fontSize: '14px',
+    fontFamily: "'DM Sans', sans-serif",
+    background: 'rgba(6,10,15,0.8)',
+    border: '1px solid rgba(255,255,255,0.07)',
+    borderRadius: '10px',
+    color: '#e8edf5',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+  btnPrimary: {
+    width: '100%',
+    padding: '16px',
+    fontFamily: "'Orbitron', monospace",
+    fontSize: '13px',
+    fontWeight: 700,
+    letterSpacing: '0.15em',
+    textTransform: 'uppercase',
+    background: 'linear-gradient(135deg, #00d4ff, #0066ff)',
+    color: '#000',
+    border: 'none',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    transition: 'opacity 0.2s, transform 0.15s',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  btnDisabled: {
+    background: 'rgba(255,255,255,0.05)',
+    color: '#3a4a5c',
+    cursor: 'not-allowed',
+  },
+
+  /* ── PIPELINE SECTION ── */
+  pipelineWrap: {
+    maxWidth: '1060px',
+    margin: '0 auto',
+    padding: '0 24px 40px',
+  },
+  sectionLabel: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '11px',
+    letterSpacing: '0.2em',
+    textTransform: 'uppercase',
+    color: '#3a4a5c',
+    marginBottom: '16px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  sectionLine: {
+    flex: 1,
+    height: '1px',
+    background: 'rgba(255,255,255,0.05)',
+  },
+  agentGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: '12px',
+    marginBottom: '28px',
+  },
+
+  /* ── STATUS BAR ── */
+  statusBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '14px 18px',
+    marginBottom: '20px',
+    borderRadius: '10px',
+    background: 'rgba(0,212,255,0.04)',
+    border: '1px solid rgba(0,212,255,0.12)',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '13px',
+    color: '#00d4ff',
+  },
+  statusDot: {
+    width: '8px', height: '8px',
+    borderRadius: '50%',
+    background: '#00d4ff',
+    flexShrink: 0,
+    animation: 'pulse-ring 1.5s infinite',
+  },
+  statusDotDone: {
+    background: '#00e87a',
+    animation: 'none',
+  },
+  statusDotError: {
+    background: '#ff4444',
+    animation: 'blink 1s infinite',
+  },
+
+  /* ── APPROVAL PANEL ── */
+  approvalCard: {
+    padding: '28px',
+    marginBottom: '20px',
+    borderRadius: '16px',
+    background: 'rgba(13,18,25,0.9)',
+    border: '1px solid rgba(0,212,255,0.2)',
+    backdropFilter: 'blur(12px)',
+    animation: 'fadeUp 0.5s ease both',
+  },
+  approvalTitle: {
+    fontFamily: "'Orbitron', monospace",
+    fontSize: '14px',
+    fontWeight: 700,
+    letterSpacing: '0.1em',
+    color: '#ffffff',
+    marginBottom: '6px',
+  },
+  approvalSub: {
+    fontSize: '13px',
+    color: '#5a6a80',
+    marginBottom: '18px',
+    lineHeight: 1.6,
+  },
+  planBox: {
+    background: 'rgba(6,10,15,0.9)',
+    border: '1px solid rgba(255,255,255,0.05)',
+    borderRadius: '8px',
+    padding: '16px',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '12px',
+    color: '#5a6a80',
+    lineHeight: 1.8,
+    maxHeight: '220px',
+    overflowY: 'auto',
+    whiteSpace: 'pre-wrap',
+    marginBottom: '18px',
+  },
+  feedbackTextarea: {
+    width: '100%',
+    padding: '14px 16px',
+    fontSize: '14px',
+    fontFamily: "'DM Sans', sans-serif",
+    fontWeight: 300,
+    background: 'rgba(6,10,15,0.8)',
+    border: '1px solid rgba(255,255,255,0.07)',
+    borderRadius: '10px',
+    color: '#e8edf5',
+    resize: 'vertical',
+    lineHeight: 1.7,
+    boxSizing: 'border-box',
+    outline: 'none',
+    marginBottom: '14px',
+  },
+  btnRow: {
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'wrap',
+  },
+  btnApprove: {
+    padding: '11px 24px',
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: '14px',
+    fontWeight: 600,
+    background: '#00e87a',
+    color: '#001a0d',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    letterSpacing: '0.02em',
+    transition: 'opacity 0.15s',
+  },
+  btnChanges: {
+    padding: '11px 24px',
+    fontSize: '14px',
+    fontWeight: 500,
+    background: 'none',
+    color: '#f59e0b',
+    border: '1px solid rgba(245,158,11,0.4)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontFamily: "'DM Sans', sans-serif",
+    transition: 'border-color 0.15s',
+  },
+  btnSubmitFeedback: {
+    padding: '11px 24px',
+    fontSize: '14px',
+    fontWeight: 600,
+    background: 'rgba(245,158,11,0.15)',
+    color: '#f59e0b',
+    border: '1px solid rgba(245,158,11,0.4)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontFamily: "'DM Sans', sans-serif",
+  },
+  btnCancel: {
+    padding: '11px 24px',
+    fontSize: '14px',
+    background: 'none',
+    color: '#3a4a5c',
+    border: '1px solid rgba(255,255,255,0.07)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontFamily: "'DM Sans', sans-serif",
+  },
+
+  /* ── COMPLETE BANNER ── */
+  completeBanner: {
+    padding: '24px 28px',
+    marginBottom: '24px',
+    borderRadius: '16px',
+    background: 'rgba(0,232,122,0.04)',
+    border: '1px solid rgba(0,232,122,0.25)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: '16px',
+    animation: 'fadeUp 0.5s ease both',
+  },
+  completeTitle: {
+    fontFamily: "'Orbitron', monospace",
+    fontSize: '16px',
+    fontWeight: 700,
+    color: '#00e87a',
+    marginBottom: '6px',
+    letterSpacing: '0.08em',
+  },
+  githubLink: {
+    color: '#00d4ff',
+    fontSize: '13px',
+    fontFamily: "'JetBrains Mono', monospace",
+    textDecoration: 'none',
+  },
+  btnNew: {
+    padding: '12px 24px',
+    fontFamily: "'Orbitron', monospace",
+    fontSize: '11px',
+    fontWeight: 700,
+    letterSpacing: '0.12em',
+    background: 'none',
+    color: '#00e87a',
+    border: '1px solid rgba(0,232,122,0.4)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+
+  /* ── ERROR ── */
+  errorBar: {
+    padding: '14px 18px',
+    marginBottom: '16px',
+    borderRadius: '10px',
+    background: 'rgba(255,68,68,0.06)',
+    border: '1px solid rgba(255,68,68,0.25)',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '13px',
+    color: '#ff6666',
+  },
+
+  /* ── FOOTER ── */
+  footer: {
+    textAlign: 'center',
+    padding: '40px 24px',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '11px',
+    color: '#1e2a38',
+    letterSpacing: '0.1em',
+  },
+};
+
+/* ─── AGENT CARD COMPONENT ───────────────────────────────────────────────── */
+// Overrides the imported AgentCard with our own Tesla-style card
+function DevronAgentCard({ agent, isActive }) {
+  const statusMap = {
+    idle:    { color: '#1e2a38', label: 'Standby',   glyph: '—' },
+    running: { color: '#00d4ff', label: 'Active',    glyph: '●' },
+    done:    { color: '#00e87a', label: 'Complete',  glyph: '✓' },
+    error:   { color: '#ff4444', label: 'Error',     glyph: '✕' },
+  };
+  const s = statusMap[agent.status] || statusMap.idle;
+
+  return (
+    <div style={{
+      padding: '20px',
+      background: isActive
+        ? 'rgba(0,212,255,0.04)'
+        : 'rgba(13,18,25,0.6)',
+      border: `1px solid ${isActive ? 'rgba(0,212,255,0.25)' : 'rgba(255,255,255,0.06)'}`,
+      borderRadius: '14px',
+      transition: 'all 0.3s',
+      position: 'relative',
+      overflow: 'hidden',
+      backdropFilter: 'blur(8px)',
+    }}>
+      {/* Active scan-line effect */}
+      {isActive && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'linear-gradient(to bottom, transparent 40%, rgba(0,212,255,0.04) 50%, transparent 60%)',
+          animation: 'scanline 2s linear infinite',
+          pointerEvents: 'none',
+        }} />
+      )}
+
+      {/* Top row: icon + name + status */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+        <span style={{ fontSize: '20px', lineHeight: 1 }}>{agent.icon}</span>
+        <span style={{
+          fontFamily: "'Orbitron', monospace",
+          fontSize: '11px', fontWeight: 700,
+          letterSpacing: '0.12em', color: '#e8edf5',
+          flex: 1,
+        }}>
+          {agent.name.toUpperCase()}
+        </span>
+        <span style={{
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: '11px', color: s.color,
+          display: 'flex', alignItems: 'center', gap: '5px',
+        }}>
+          <span style={{
+            width: '6px', height: '6px', borderRadius: '50%',
+            background: s.color, flexShrink: 0,
+            animation: isActive ? 'pulse-ring 1.5s infinite' : 'none',
+          }} />
+          {s.label}
+        </span>
+      </div>
+
+      {/* Description */}
+      <p style={{
+        fontSize: '12px', color: '#3a4a5c',
+        lineHeight: 1.6, fontWeight: 300,
+        fontFamily: "'DM Sans', sans-serif",
+      }}>
+        {agent.description}
+      </p>
+
+      {/* Output preview */}
+      {agent.status === 'done' && agent.output && (
+        <div style={{
+          marginTop: '12px',
+          paddingTop: '10px',
+          borderTop: '1px solid rgba(255,255,255,0.04)',
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: '11px',
+          color: '#2a3a4a',
+          lineHeight: 1.6,
+          overflow: 'hidden',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+        }}>
+          {agent.output.substring(0, 100)}…
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── MAIN APP ────────────────────────────────────────────────────────────── */
 export default function App() {
 
-  // ─── STATE ──────────────────────────────────────────────────────────────────
-
-  // User's project details
+  /* State */
   const [prompt, setPrompt]           = useState('');
   const [projectType, setProjectType] = useState('python');
   const [projectName, setProjectName] = useState('');
-
-  // Session ID returned by POST /project/start
-  // Once set, the polling loop starts automatically (via useEffect below)
   const [sessionId, setSessionId]     = useState(null);
-
-  // The full status object from GET /project/{id}/status
-  // This is the single source of truth — all UI derives from this.
   const [pipelineStatus, setPipelineStatus] = useState(null);
-
-  // UI state
-  const [isStarting, setIsStarting]   = useState(false); // button spinner while calling /start
+  const [isStarting, setIsStarting]   = useState(false);
   const [activeTab, setActiveTab]     = useState('architecture');
-  const [feedback, setFeedback]       = useState('');    // text for "request changes" textarea
-  const [showFeedbackBox, setShowFeedbackBox] = useState(false);
+  const [feedback, setFeedback]       = useState('');
+  const [showFeedback, setShowFeedback] = useState(false);
   const [error, setError]             = useState('');
-
-  // Agent card display state — derived from pipelineStatus in the polling effect
   const [agents, setAgents] = useState({
-    architect: { name: 'Architect', icon: '🏗', description: 'Analyzes your idea and designs the system architecture.', status: 'idle', output: '' },
-    developer: { name: 'Developer', icon: '💻', description: 'Writes the actual code based on the architecture.',        status: 'idle', output: '' },
-    tester:    { name: 'Tester',    icon: '🧪', description: 'Reviews code for bugs and quality issues.',                status: 'idle', output: '' },
-    github:    { name: 'GitHub',    icon: '🐙', description: 'Commits the approved code to the repository.',             status: 'idle', output: '' },
+    architect: { name: 'Architect', icon: '🏗', description: 'Designs system architecture and technical blueprint.',       status: 'idle', output: '' },
+    developer: { name: 'Developer', icon: '💻', description: 'Writes production-grade code from the architecture plan.',    status: 'idle', output: '' },
+    tester:    { name: 'Tester',    icon: '🧪', description: 'Validates code quality, logic, and edge cases.',             status: 'idle', output: '' },
+    github:    { name: 'GitHub',    icon: '🐙', description: 'Commits and deploys the final code to the repository.',      status: 'idle', output: '' },
   });
 
   const outputRef = useRef(null);
 
-  // ─── AUTO-SCROLL when outputs change ────────────────────────────────────────
+  /* Auto-scroll */
   useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
   }, [pipelineStatus?.outputs]);
 
-  // ─── POLLING LOOP ────────────────────────────────────────────────────────────
-  // This useEffect runs whenever sessionId changes.
-  // When sessionId becomes non-null, it starts an interval that calls
-  // GET /project/{id}/status every 2 seconds and updates all state.
-  // When the pipeline is done (is_done=true), the interval clears itself.
+  /* Polling loop */
   useEffect(() => {
-    if (!sessionId) return; // No session yet — do nothing
-
+    if (!sessionId) return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${API_URL}/project/${sessionId}/status`);
-        if (!res.ok) throw new Error(`Status check failed: ${res.status}`);
+        const res  = await fetch(`${API_URL}/project/${sessionId}/status`);
+        if (!res.ok) throw new Error(`Status ${res.status}`);
         const data = await res.json();
-
         setPipelineStatus(data);
 
-        // ── Update agent card statuses based on pipeline status ──────────────
-        // "active" = currently running (blue highlight)
-        // "done"   = already completed (green checkmark)
-        // "idle"   = not started yet
-        const activeAgent    = STATUS_TO_AGENT[data.status] || null;
-        const completedAgents = STATUS_COMPLETED_AGENTS[data.status] || [];
+        const activeAgent  = STATUS_TO_AGENT[data.status] || null;
+        const doneAgents   = STATUS_DONE_AGENTS[data.status] || [];
 
         setAgents(prev => {
-          const updated = {};
+          const next = {};
           for (const key of Object.keys(prev)) {
-            let status = 'idle';
-            if (key === activeAgent)         status = 'running';
-            else if (completedAgents.includes(key)) status = 'done';
-
-            // Keep output text if it was already set
-            updated[key] = {
+            const agentStatus =
+              key === activeAgent     ? 'running'
+              : doneAgents.includes(key) ? 'done'
+              : 'idle';
+            next[key] = {
               ...prev[key],
-              status,
-              output: data.outputs?.[key === 'architect' ? 'architecture'
-                                   : key === 'tester'    ? 'tests'
-                                   : key]                || prev[key].output,
+              status: agentStatus,
+              output: data.outputs?.[
+                key === 'architect' ? 'architecture'
+                : key === 'tester'  ? 'tests'
+                : key
+              ] || prev[key].output,
             };
           }
-          return updated;
+          return next;
         });
 
-        // ── Auto-switch output tab based on phase ─────────────────────────────
-        if (data.status === 'developing' || data.status === 'implementing') {
-          setActiveTab('code');
-        } else if (data.status === 'testing' || data.status === 'validating') {
-          setActiveTab('tests');
-        } else if (data.status === 'planning' || data.status === 'waiting_plan_approval') {
-          setActiveTab('architecture');
-        } else if (data.status === 'processing_feedback' || data.status === 'waiting_improvement_approval') {
-          setActiveTab('architecture');
-        }
+        if (['developing','implementing'].includes(data.status))  setActiveTab('code');
+        if (['testing','validating'].includes(data.status))       setActiveTab('tests');
+        if (['planning','waiting_plan_approval','processing_feedback','waiting_improvement_approval'].includes(data.status)) setActiveTab('architecture');
 
-        // ── Stop polling when done ────────────────────────────────────────────
-        if (data.is_done) {
-          clearInterval(interval);
-        }
-
-      } catch (err) {
-        setError(`Polling error: ${err.message}`);
+        if (data.is_done) clearInterval(interval);
+      } catch (e) {
+        setError(`Connection error: ${e.message}`);
         clearInterval(interval);
       }
-    }, POLL_INTERVAL_MS);
-
-    // Cleanup: clear interval if this component unmounts or sessionId changes
+    }, POLL_MS);
     return () => clearInterval(interval);
   }, [sessionId]);
 
-  // ─── START THE PIPELINE ───────────────────────────────────────────────────────
-  // Called when user clicks "Run Agent Pipeline".
-  // Calls POST /project/start and stores the returned session_id.
+  /* Start pipeline */
   async function handleStart() {
     if (!prompt.trim() || isStarting) return;
-
     setIsStarting(true);
     setError('');
-    setFeedback('');
-    setShowFeedbackBox(false);
     setPipelineStatus(null);
     setSessionId(null);
     setActiveTab('architecture');
-
-    // Reset all agent cards to idle
+    setShowFeedback(false);
+    setFeedback('');
     setAgents(prev => {
-      const reset = {};
-      for (const key of Object.keys(prev)) {
-        reset[key] = { ...prev[key], status: 'idle', output: '' };
-      }
-      return reset;
+      const r = {};
+      for (const k of Object.keys(prev)) r[k] = { ...prev[k], status: 'idle', output: '' };
+      return r;
     });
-
     try {
       const res = await fetch(`${API_URL}/project/start`, {
         method: 'POST',
@@ -187,407 +606,320 @@ export default function App() {
         body: JSON.stringify({
           project_description: prompt.trim(),
           project_type: projectType,
-          project_name: projectName.trim() || 'my-ai-project',
+          project_name: projectName.trim() || 'devron-project',
         }),
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || `Server error: ${res.status}`);
-      }
-
+      if (!res.ok) { const e = await res.json(); throw new Error(e.detail || res.status); }
       const data = await res.json();
-      // Setting sessionId triggers the polling useEffect above
       setSessionId(data.session_id);
-
-    } catch (err) {
-      setError(`Failed to start: ${err.message}`);
+    } catch (e) {
+      setError(`Failed to start: ${e.message}`);
     } finally {
       setIsStarting(false);
     }
   }
 
-  // ─── SEND A RESPONSE to the waiting pipeline ──────────────────────────────
-  // Called for Approve, Request Changes, or Cancel.
-  // Calls POST /project/{id}/respond which wakes up the backend thread.
+  /* Send response to paused pipeline */
   async function sendResponse(approved, cancelled = false) {
     if (!sessionId) return;
-
     if (!approved && !cancelled && !feedback.trim()) {
       setError('Please write your feedback before submitting.');
       return;
     }
-
     try {
       const res = await fetch(`${API_URL}/project/${sessionId}/respond`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          approved,
-          cancelled,
-          feedback: feedback.trim(),
-        }),
+        body: JSON.stringify({ approved, cancelled, feedback: feedback.trim() }),
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || `Response failed: ${res.status}`);
-      }
-
-      // Clear feedback box after sending
+      if (!res.ok) { const e = await res.json(); throw new Error(e.detail || res.status); }
       setFeedback('');
-      setShowFeedbackBox(false);
+      setShowFeedback(false);
       setError('');
-
-    } catch (err) {
-      setError(`Failed to send response: ${err.message}`);
+    } catch (e) {
+      setError(`Response error: ${e.message}`);
     }
   }
 
-  // ─── RESET everything to start a new project ─────────────────────────────
+  /* Reset */
   function handleReset() {
-    setSessionId(null);
-    setPipelineStatus(null);
-    setPrompt('');
-    setProjectName('');
-    setFeedback('');
-    setShowFeedbackBox(false);
-    setError('');
-    setIsStarting(false);
+    setSessionId(null); setPipelineStatus(null);
+    setPrompt(''); setProjectName(''); setFeedback('');
+    setShowFeedback(false); setError(''); setIsStarting(false);
     setActiveTab('architecture');
     setAgents(prev => {
-      const reset = {};
-      for (const key of Object.keys(prev)) {
-        reset[key] = { ...prev[key], status: 'idle', output: '' };
-      }
-      return reset;
+      const r = {};
+      for (const k of Object.keys(prev)) r[k] = { ...prev[k], status: 'idle', output: '' };
+      return r;
     });
   }
 
-  // ─── DERIVED VALUES (computed from pipelineStatus) ────────────────────────
-  const isWaiting    = pipelineStatus && WAITING_STATUSES.has(pipelineStatus.status);
-  const isRunning    = pipelineStatus && !pipelineStatus.is_done;
-  const isDone       = pipelineStatus?.status === 'complete';
-  const isError      = pipelineStatus?.status === 'error';
-  const phaseLabel   = pipelineStatus?.phase_label || '';
-  const phaseDetail  = pipelineStatus?.phase_detail || '';
-  const currentPlan  = pipelineStatus?.current_plan || '';
-  const githubUrl    = pipelineStatus?.github_url || '';
-  const outputs      = pipelineStatus?.outputs || { architecture: '', code: '', tests: '' };
+  /* Derived */
+  const isWaiting  = pipelineStatus && WAITING.has(pipelineStatus.status);
+  const isRunning  = pipelineStatus && !pipelineStatus.is_done;
+  const isDone     = pipelineStatus?.status === 'complete';
+  const isError    = pipelineStatus?.status === 'error';
+  const phaseLabel = pipelineStatus?.phase_label || '';
+  const phaseDetail= pipelineStatus?.phase_detail || '';
+  const currentPlan= pipelineStatus?.current_plan || '';
+  const githubUrl  = pipelineStatus?.github_url || '';
+  const outputs    = pipelineStatus?.outputs || { architecture: '', code: '', tests: '' };
 
-  // What heading to show on the approval panel
-  const approvalHeadings = {
-    waiting_plan_approval:        '📋 Review the Technical Plan',
-    waiting_review:               '🔍 Review the Generated Project',
-    waiting_improvement_approval: '📝 Review the Improvement Plan',
+  const approvalTitles = {
+    waiting_plan_approval:        'TECHNICAL PLAN REVIEW',
+    waiting_review:               'PROJECT REVIEW',
+    waiting_improvement_approval: 'IMPROVEMENT PLAN REVIEW',
   };
-  const approvalHeading = approvalHeadings[pipelineStatus?.status] || 'Review Required';
+  const approvalTitle = approvalTitles[pipelineStatus?.status] || 'REVIEW REQUIRED';
 
-  // ─── RENDER ───────────────────────────────────────────────────────────────
+  /* ── RENDER ── */
   return (
-    <div style={{ maxWidth: '860px', margin: '0 auto', padding: '40px 20px' }}>
+    <div style={S.page}>
 
-      {/* ── HEADER ── */}
-      <div style={{ marginBottom: '32px' }}>
-        <h1 style={{ fontSize: '32px', fontWeight: '800', marginBottom: '8px' }}>
-          Developer AI Agent
-        </h1>
-        <p style={{ color: '#6b7a99', lineHeight: '1.6' }}>
-          Describe what you want to build. Four AI agents will collaborate to
-          design, code, test, and commit it to GitHub.
-        </p>
+      {/* ── HERO ── */}
+      <div style={S.hero}>
+        <div style={S.heroGlow} />
+        <span style={S.wordmark}>DEVRON</span>
+        <p style={S.tagline}>Multi-Agent AI Software Development</p>
+        <div style={S.divider} />
       </div>
 
-      {/* ── INPUT FORM — only show when not running ── */}
+      {/* ── INPUT (only before session starts) ── */}
       {!sessionId && (
-        <div style={{ marginBottom: '24px' }}>
-
-          {/* Project description */}
-          <textarea
-            id="project-prompt"
-            name="project-prompt"
-            value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-            disabled={isStarting}
-            placeholder="e.g. Build a todo list app with React and localStorage"
-            rows={4}
-            style={{
-              width: '100%', padding: '14px', fontSize: '15px',
-              background: '#1a1d27', border: '1px solid #2e3250', borderRadius: '8px',
-              color: '#e8eaf0', resize: 'vertical', lineHeight: '1.6',
-              fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: '10px',
-            }}
-          />
-
-          {/* Project name and type — row */}
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-            <input
-              type="text"
-              value={projectName}
-              onChange={e => setProjectName(e.target.value)}
-              placeholder="Project name (e.g. my-todo-app)"
+        <div style={S.inputWrap}>
+          <div style={S.inputCard}>
+            <label htmlFor="project-prompt" style={S.label}>
+              // Mission Brief
+            </label>
+            <textarea
+              id="project-prompt"
+              name="project-prompt"
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+              disabled={isStarting}
+              placeholder="Describe the software you want to build — be as specific as possible about features, tech stack, and goals."
+              rows={5}
               style={{
-                flex: 1, padding: '10px 14px', fontSize: '14px',
-                background: '#1a1d27', border: '1px solid #2e3250', borderRadius: '8px',
-                color: '#e8eaf0', fontFamily: 'inherit',
+                ...S.textarea,
+                borderColor: prompt ? 'rgba(0,212,255,0.2)' : 'rgba(255,255,255,0.07)',
               }}
+              onFocus={e => e.target.style.borderColor = 'rgba(0,212,255,0.3)'}
+              onBlur={e => e.target.style.borderColor = prompt ? 'rgba(0,212,255,0.2)' : 'rgba(255,255,255,0.07)'}
             />
-            <select
-              value={projectType}
-              onChange={e => setProjectType(e.target.value)}
+
+            <div style={S.row}>
+              <input
+                type="text"
+                value={projectName}
+                onChange={e => setProjectName(e.target.value)}
+                placeholder="Project name (e.g. my-api)"
+                style={S.input}
+              />
+              <select
+                value={projectType}
+                onChange={e => setProjectType(e.target.value)}
+                style={S.select}
+              >
+                <option value="python">Python</option>
+                <option value="web">Web</option>
+                <option value="javascript">JavaScript</option>
+                <option value="ml">Machine Learning</option>
+              </select>
+            </div>
+
+            <button
+              onClick={handleStart}
+              disabled={!prompt.trim() || isStarting}
               style={{
-                padding: '10px 14px', fontSize: '14px',
-                background: '#1a1d27', border: '1px solid #2e3250', borderRadius: '8px',
-                color: '#e8eaf0', fontFamily: 'inherit',
+                ...S.btnPrimary,
+                ...(!prompt.trim() || isStarting ? S.btnDisabled : {}),
               }}
             >
-              <option value="python">Python</option>
-              <option value="web">Web</option>
-              <option value="javascript">JavaScript</option>
-              <option value="ml">Machine Learning</option>
-            </select>
+              {isStarting
+                ? '↻ INITIALIZING AGENTS…'
+                : '▶  LAUNCH DEVRON'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── PIPELINE ── */}
+      {(sessionId || Object.values(agents).some(a => a.status !== 'idle')) && (
+        <div style={S.pipelineWrap}>
+
+          {/* Section heading */}
+          <div style={S.sectionLabel}>
+            <span>Agent Pipeline</span>
+            <div style={S.sectionLine} />
           </div>
 
-          <button
-            onClick={handleStart}
-            disabled={!prompt.trim() || isStarting}
-            style={{
-              padding: '12px 28px', fontSize: '15px', fontWeight: '600',
-              background: !prompt.trim() || isStarting ? '#2e3250' : '#7c6af7',
-              color: !prompt.trim() || isStarting ? '#6b7a99' : '#fff',
-              border: 'none', borderRadius: '8px',
-              cursor: !prompt.trim() || isStarting ? 'not-allowed' : 'pointer',
-              transition: 'all 0.2s',
-            }}
-          >
-            {isStarting ? '⏳ Starting…' : '▶ Run Agent Pipeline'}
-          </button>
-        </div>
-      )}
+          {/* Agent cards */}
+          <div style={S.agentGrid}>
+            {Object.entries(agents).map(([key, agent]) => (
+              <DevronAgentCard
+                key={key}
+                agent={agent}
+                isActive={agent.status === 'running'}
+              />
+            ))}
+          </div>
 
-      {/* ── AGENT PIPELINE CARDS ── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '12px', marginBottom: '24px',
-      }}>
-        {Object.entries(agents).map(([key, agent]) => (
-          <AgentCard
-            key={key}
-            agent={agent}
-            isActive={agent.status === 'running'}
-          />
-        ))}
-      </div>
-
-      {/* ── CURRENT PHASE LABEL (shown while running) ── */}
-      {phaseLabel && (
-        <div style={{
-          padding: '12px 16px', marginBottom: '16px', borderRadius: '8px',
-          background: isError ? '#2a1a1a' : '#1a2535',
-          border: `1px solid ${isError ? '#f87171' : '#2e3250'}`,
-          color: isError ? '#f87171' : '#5db8ff', fontSize: '14px',
-        }}>
-          {phaseLabel}
-          {phaseDetail && (
-            <span style={{ color: '#6b7a99', marginLeft: '10px', fontSize: '13px' }}>
-              {phaseDetail}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* ── ERROR MESSAGE ── */}
-      {error && (
-        <div style={{
-          padding: '12px 16px', marginBottom: '16px', borderRadius: '8px',
-          background: '#2a1a1a', border: '1px solid #f87171',
-          color: '#f87171', fontSize: '14px',
-        }}>
-          {error}
-        </div>
-      )}
-
-      {/* ── APPROVAL / REVIEW PANEL ──
-           This shows whenever the backend is PAUSED waiting for user input.
-           isWaiting is true for all three pause points:
-             - waiting_plan_approval        (after manager creates plan)
-             - waiting_review               (after initial deploy)
-             - waiting_improvement_approval (after manager creates improvement plan) */}
-      {isWaiting && (
-        <div style={{
-          padding: '20px', marginBottom: '16px', borderRadius: '10px',
-          border: '1px solid #3d3520', background: '#1f1c10',
-        }}>
-          <p style={{ fontWeight: '700', fontSize: '16px', marginBottom: '8px' }}>
-            {approvalHeading}
-          </p>
-
-          {/* Show the plan text if we're reviewing a plan */}
-          {currentPlan && (
-            <div style={{
-              background: '#12151f', border: '1px solid #2e3250',
-              borderRadius: '6px', padding: '14px',
-              fontFamily: 'monospace', fontSize: '13px',
-              color: '#8b90a8', lineHeight: '1.7',
-              maxHeight: '250px', overflowY: 'auto',
-              marginBottom: '14px', whiteSpace: 'pre-wrap',
-            }}>
-              {currentPlan}
+          {/* Status bar */}
+          {phaseLabel && (
+            <div style={S.statusBar}>
+              <div style={{
+                ...S.statusDot,
+                ...(isDone  ? S.statusDotDone  : {}),
+                ...(isError ? S.statusDotError : {}),
+              }} />
+              <span>{phaseLabel}</span>
+              {phaseDetail && (
+                <span style={{ color: '#3a4a5c', marginLeft: '8px', fontSize: '12px' }}>
+                  {phaseDetail}
+                </span>
+              )}
+              {isRunning && (
+                <div style={{
+                  marginLeft: 'auto', width: '14px', height: '14px',
+                  border: '2px solid rgba(0,212,255,0.15)',
+                  borderTopColor: '#00d4ff',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite',
+                  flexShrink: 0,
+                }} />
+              )}
             </div>
           )}
 
-          {/* GitHub link if available */}
-          {githubUrl && pipelineStatus?.status === 'waiting_review' && (
-            <p style={{ fontSize: '13px', color: '#6b7a99', marginBottom: '12px' }}>
-              🔗 View on GitHub:{' '}
-              <a href={githubUrl} target="_blank" rel="noreferrer"
-                style={{ color: '#5db8ff' }}>
-                {githubUrl}
-              </a>
-            </p>
+          {/* Error */}
+          {(error || isError) && (
+            <div style={S.errorBar}>
+              ✕ {error || pipelineStatus?.error || 'An error occurred.'}
+            </div>
           )}
 
-          <p style={{ fontSize: '13px', color: '#8b90a8', marginBottom: '14px' }}>
-            Approve to continue, or request changes with specific feedback.
-          </p>
+          {/* ── APPROVAL PANEL ── */}
+          {isWaiting && (
+            <div style={S.approvalCard}>
+              <p style={S.approvalTitle}>{approvalTitle}</p>
+              <p style={S.approvalSub}>
+                {pipelineStatus?.status === 'waiting_review'
+                  ? 'The project has been deployed. Review the output, then approve or request changes.'
+                  : 'Review the plan below, then approve to proceed or request modifications.'}
+              </p>
 
-          {/* Feedback textarea — shown when user clicks "Request Changes" */}
-          {showFeedbackBox && (
-            <textarea
-              id="feedback-input"
-              name="feedback-input"
-              value={feedback}
-              onChange={e => setFeedback(e.target.value)}
-              placeholder="Describe the changes you want…"
-              rows={4}
-              style={{
-                width: '100%', padding: '12px', fontSize: '14px',
-                background: '#12151f', border: '1px solid #2e3250',
-                borderRadius: '6px', color: '#e8eaf0',
-                fontFamily: 'inherit', lineHeight: '1.6',
-                boxSizing: 'border-box', marginBottom: '10px',
-                resize: 'vertical',
-              }}
-            />
+              {/* Plan preview */}
+              {currentPlan && (
+                <div style={S.planBox}>{currentPlan}</div>
+              )}
+
+              {/* GitHub link */}
+              {githubUrl && pipelineStatus?.status === 'waiting_review' && (
+                <p style={{ marginBottom: '16px', fontSize: '13px' }}>
+                  <span style={{ color: '#3a4a5c', fontFamily: "'JetBrains Mono', monospace" }}>
+                    repository →{' '}
+                  </span>
+                  <a href={githubUrl} target="_blank" rel="noreferrer" style={S.githubLink}>
+                    {githubUrl}
+                  </a>
+                </p>
+              )}
+
+              {/* Feedback textarea */}
+              {showFeedback && (
+                <textarea
+                  id="feedback-input"
+                  name="feedback-input"
+                  value={feedback}
+                  onChange={e => setFeedback(e.target.value)}
+                  placeholder="Describe the changes you want — be specific about features, bugs, or improvements…"
+                  rows={4}
+                  style={S.feedbackTextarea}
+                />
+              )}
+
+              {/* Buttons */}
+              <div style={S.btnRow}>
+                <button onClick={() => sendResponse(true)}   style={S.btnApprove}>
+                  ✓ Approve
+                </button>
+
+                {!showFeedback ? (
+                  <button onClick={() => setShowFeedback(true)} style={S.btnChanges}>
+                    ✏ Request Changes
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => sendResponse(false)}
+                    disabled={!feedback.trim()}
+                    style={{
+                      ...S.btnSubmitFeedback,
+                      opacity: feedback.trim() ? 1 : 0.4,
+                      cursor: feedback.trim() ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    ↑ Submit Feedback
+                  </button>
+                )}
+
+                <button onClick={() => sendResponse(false, true)} style={S.btnCancel}>
+                  ✕ Cancel
+                </button>
+              </div>
+            </div>
           )}
 
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            {/* APPROVE */}
-            <button
-              onClick={() => sendResponse(true)}
-              style={{
-                padding: '9px 22px', background: '#4ade80', color: '#0a1a0a',
-                border: 'none', borderRadius: '6px', fontWeight: '600',
-                cursor: 'pointer', fontSize: '14px',
-              }}
-            >
-              ✓ Approve
-            </button>
-
-            {/* REQUEST CHANGES — first click reveals textarea, second click sends */}
-            {!showFeedbackBox ? (
-              <button
-                onClick={() => setShowFeedbackBox(true)}
-                style={{
-                  padding: '9px 22px', background: 'none', color: '#fbbf24',
-                  border: '1px solid #fbbf24', borderRadius: '6px',
-                  cursor: 'pointer', fontSize: '14px',
-                }}
-              >
-                ✏️ Request Changes
+          {/* ── COMPLETE BANNER ── */}
+          {isDone && (
+            <div style={S.completeBanner}>
+              <div>
+                <p style={S.completeTitle}>MISSION COMPLETE</p>
+                {githubUrl && (
+                  <a href={githubUrl} target="_blank" rel="noreferrer" style={S.githubLink}>
+                    {githubUrl} →
+                  </a>
+                )}
+              </div>
+              <button onClick={handleReset} style={S.btnNew}>
+                + NEW PROJECT
               </button>
-            ) : (
-              <button
-                onClick={() => sendResponse(false)}
-                disabled={!feedback.trim()}
-                style={{
-                  padding: '9px 22px',
-                  background: feedback.trim() ? '#fbbf24' : '#2e3250',
-                  color: feedback.trim() ? '#0a0a0a' : '#6b7a99',
-                  border: 'none', borderRadius: '6px', fontWeight: '600',
-                  cursor: feedback.trim() ? 'pointer' : 'not-allowed', fontSize: '14px',
-                }}
-              >
-                📤 Submit Feedback
-              </button>
-            )}
+            </div>
+          )}
 
-            {/* CANCEL */}
-            <button
-              onClick={() => sendResponse(false, true)}
-              style={{
-                padding: '9px 22px', background: 'none', color: '#f87171',
-                border: '1px solid #f87171', borderRadius: '6px',
-                cursor: 'pointer', fontSize: '14px',
-              }}
-            >
-              ✕ Cancel
-            </button>
+          {/* ── OUTPUT PANEL ── */}
+          <div style={{ marginTop: '8px' }}>
+            <div style={S.sectionLabel}>
+              <span>Output</span>
+              <div style={S.sectionLine} />
+            </div>
+            <div ref={outputRef}>
+              <OutputPanel
+                outputs={{
+                  architecture: outputs.architecture || currentPlan,
+                  code:         outputs.code,
+                  tests:        outputs.tests,
+                }}
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+              />
+            </div>
           </div>
+
+          {/* Cancel while running */}
+          {isRunning && !isWaiting && (
+            <div style={{ textAlign: 'right', marginTop: '16px' }}>
+              <button onClick={handleReset} style={S.btnCancel}>
+                ✕ Abort & Start Over
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ── COMPLETE BANNER ── */}
-      {isDone && (
-        <div style={{
-          padding: '16px 20px', marginBottom: '16px', borderRadius: '10px',
-          border: '1px solid #4ade80', background: '#0a1a0a',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          flexWrap: 'wrap', gap: '10px',
-        }}>
-          <div>
-            <p style={{ fontWeight: '700', color: '#4ade80', marginBottom: '4px' }}>
-              🎉 Project Complete!
-            </p>
-            {githubUrl && (
-              <a href={githubUrl} target="_blank" rel="noreferrer"
-                style={{ color: '#5db8ff', fontSize: '14px' }}>
-                View on GitHub →
-              </a>
-            )}
-          </div>
-          <button
-            onClick={handleReset}
-            style={{
-              padding: '8px 20px', background: '#7c6af7', color: '#fff',
-              border: 'none', borderRadius: '6px', cursor: 'pointer',
-              fontWeight: '600', fontSize: '14px',
-            }}
-          >
-            + New Project
-          </button>
-        </div>
-      )}
-
-      {/* ── OUTPUT PANEL ── */}
-      <div ref={outputRef}>
-        <OutputPanel
-          outputs={{
-            architecture: outputs.architecture || currentPlan,
-            code:         outputs.code,
-            tests:        outputs.tests,
-          }}
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-        />
+      {/* ── FOOTER ── */}
+      <div style={S.footer}>
+        DEVRON / NEURAL COMMAND CENTER / MULTI-AGENT AI SYSTEM
       </div>
-
-      {/* ── "New Project" button while running ── */}
-      {isRunning && (
-        <div style={{ marginTop: '16px', textAlign: 'right' }}>
-          <button
-            onClick={handleReset}
-            style={{
-              padding: '6px 16px', background: 'none',
-              color: '#6b7a99', border: '1px solid #2e3250',
-              borderRadius: '6px', cursor: 'pointer', fontSize: '13px',
-            }}
-          >
-            ✕ Cancel & Start Over
-          </button>
-        </div>
-      )}
     </div>
   );
 }

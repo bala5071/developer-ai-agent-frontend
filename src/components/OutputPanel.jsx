@@ -1,37 +1,48 @@
-// "export default function" — this is how every React component starts
-// Props: outputs (the text content), activeTab (which tab is selected),
-//        setActiveTab (function to change the selected tab)
-export default function OutputPanel({ outputs, activeTab, setActiveTab }) {
+// src/components/OutputPanel.jsx — Devron themed output panel
 
-  // Define the tabs as an array of objects.
-  // Why an array? So we can use .map() to render them — no repetition!
+export default function OutputPanel({ outputs, activeTab, setActiveTab }) {
   const tabs = [
-    { id: 'architecture', label: '🏗 Architecture', content: outputs.architecture },
-    { id: 'code',         label: '💻 Code',         content: outputs.code },
-    { id: 'tests',        label: '🧪 Test Report', content: outputs.tests },
+    { id: 'architecture', label: '// Architecture', content: outputs.architecture },
+    { id: 'code',         label: '// Code',         content: outputs.code },
+    { id: 'tests',        label: '// Test Report',  content: outputs.tests },
   ];
 
   return (
-    <div style={{ border: '1px solid #2e3250', borderRadius: '10px', overflow: 'hidden' }}>
-
-      
-      <div style={{ display: 'flex', background: '#1a1d27', borderBottom: '1px solid #2e3250' }}>
-
-        
+    <div style={{
+      border: '1px solid rgba(255,255,255,0.06)',
+      borderRadius: '14px',
+      overflow: 'hidden',
+      background: 'rgba(6,10,15,0.8)',
+      backdropFilter: 'blur(8px)',
+    }}>
+      {/* Tab bar */}
+      <div style={{
+        display: 'flex',
+        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        background: 'rgba(13,18,25,0.6)',
+        padding: '0 4px',
+      }}>
         {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            // Disable the tab button if there's no content yet
+            onClick={() => tab.content && setActiveTab(tab.id)}
             disabled={!tab.content}
             style={{
-              padding: '10px 18px', fontSize: '13px', cursor: tab.content ? 'pointer' : 'default',
-              background: 'none', border: 'none',
-              // Active tab has a blue bottom border; inactive tabs have transparent border
-              borderBottom: activeTab === tab.id ? '2px solid #5db8ff' : '2px solid transparent',
-              color: activeTab === tab.id ? '#e8eaf0' : '#6b7a99',
-              fontWeight: activeTab === tab.id ? '600' : '400',
-              transition: 'all 0.15s',
+              padding: '12px 20px',
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: '12px',
+              letterSpacing: '0.05em',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === tab.id
+                ? '1px solid #00d4ff'
+                : '1px solid transparent',
+              color: activeTab === tab.id
+                ? '#00d4ff'
+                : tab.content ? '#3a4a5c' : '#1e2a38',
+              cursor: tab.content ? 'pointer' : 'not-allowed',
+              transition: 'color 0.2s',
+              marginBottom: '-1px',
             }}
           >
             {tab.label}
@@ -39,15 +50,22 @@ export default function OutputPanel({ outputs, activeTab, setActiveTab }) {
         ))}
       </div>
 
-      
+      {/* Content */}
       <div style={{
-        padding: '20px', minHeight: '250px', maxHeight: '400px', overflowY: 'auto',
-        fontFamily: 'monospace', fontSize: '13px', lineHeight: '1.7',
-        color: '#8b90a8', background: '#12151f', whiteSpace: 'pre-wrap',
+        padding: '20px 24px',
+        minHeight: '260px',
+        maxHeight: '420px',
+        overflowY: 'auto',
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: '13px',
+        lineHeight: 1.8,
+        color: '#4a5a6a',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
       }}>
         {tabs.find(t => t.id === activeTab)?.content || (
-          <span style={{ color: '#3d4265', fontStyle: 'italic' }}>
-            Waiting for agent output…
+          <span style={{ color: '#1e2a38', fontStyle: 'italic' }}>
+            — awaiting agent output —
           </span>
         )}
       </div>
