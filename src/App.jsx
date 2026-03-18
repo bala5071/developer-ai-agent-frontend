@@ -917,7 +917,7 @@ export default function App() {
 
       {/* ── FOOTER ── */}
       <div style={S.footer}>
-        DEVRON / NEURAL COMMAND CENTER / MULTI-AGENT AI SYSTEM
+        DEVRON | MULTI-AGENT AI SYSTEM
       </div>
     </div>
   );
