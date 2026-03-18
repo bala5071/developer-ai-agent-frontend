@@ -689,7 +689,6 @@ export default function App() {
         <div style={S.inputWrap}>
           <div style={S.inputCard}>
             <label htmlFor="project-prompt" style={S.label}>
-              // Mission Brief
             </label>
             <textarea
               id="project-prompt"
