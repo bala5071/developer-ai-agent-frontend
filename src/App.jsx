@@ -528,6 +528,8 @@ export default function App() {
     tester:    { name: 'Tester',    icon: '🧪', description: 'Validates code quality, logic, and edge cases.',             status: 'idle', output: '' },
     github:    { name: 'GitHub',    icon: '🐙', description: 'Commits and deploys the final code to the repository.',      status: 'idle', output: '' },
   });
+  const [executionResult, setExecutionResult] = useState(null);
+  const [isExecuting, setIsExecuting]         = useState(false);
 
   const outputRef = useRef(null);
 
@@ -654,6 +656,27 @@ export default function App() {
     });
   }
 
+  async function handleExecute() {
+    setIsExecuting(true);
+    setExecutionResult(null);
+    setError('');
+    try {
+      const res = await fetch(`${API_URL}/project/${sessionId}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        throw new Error(e.detail || `Execution failed: ${res.status}`);
+      }
+      setExecutionResult(await res.json());
+    } catch (e) {
+      setError(`Execution error: ${e.message}`);
+    } finally {
+      setIsExecuting(false);
+    }
+  }
+
   /* Derived */
   const isWaiting  = pipelineStatus && WAITING.has(pipelineStatus.status);
   const isRunning  = pipelineStatus && !pipelineStatus.is_done;
@@ -762,7 +785,38 @@ export default function App() {
               />
             ))}
           </div>
-
+          {/* ── FILES SAVED TO DATABASE ── */}
+          {pipelineStatus?.files_generated?.length > 0 && (
+            <div style={{
+              padding: '16px 20px',
+              marginBottom: '20px',
+              borderRadius: '10px',
+              background: 'rgba(13,18,25,0.6)',
+              border: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              <p style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '11px', letterSpacing: '0.15em',
+                color: '#3a4a5c', textTransform: 'uppercase',
+                marginBottom: '10px',
+              }}>
+                Files saved — {pipelineStatus.files_generated.length} total
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {pipelineStatus.files_generated.map(file => (
+                  <span key={file} style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: '12px', color: '#00d4ff',
+                    background: 'rgba(0,212,255,0.06)',
+                    border: '1px solid rgba(0,212,255,0.15)',
+                    padding: '3px 10px', borderRadius: '4px',
+                  }}>
+                    {file}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Status bar */}
           {phaseLabel && (
             <div style={S.statusBar}>
@@ -903,7 +957,184 @@ export default function App() {
               />
             </div>
           </div>
+          {/* ── RUN & TEST (only shown when complete) ── */}
+          {isDone && (
+            <div style={{ marginTop: '20px' }}>
 
+              <div style={S.sectionLabel}>
+                <span>Execution</span>
+                <div style={S.sectionLine} />
+              </div>
+
+              {/* Run button */}
+              <button
+                onClick={handleExecute}
+                disabled={isExecuting}
+                style={{
+                  padding: '13px 28px',
+                  fontFamily: "'Orbitron', monospace",
+                  fontSize: '11px', fontWeight: 700,
+                  letterSpacing: '0.15em',
+                  background: isExecuting
+                    ? 'rgba(255,255,255,0.04)'
+                    : 'linear-gradient(135deg, #00e87a, #00a854)',
+                  color: isExecuting ? '#3a4a5c' : '#001a0d',
+                  border: 'none', borderRadius: '8px',
+                  cursor: isExecuting ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  marginBottom: '16px',
+                }}
+              >
+                {isExecuting ? (
+                  <>
+                    <div style={{
+                      width: '12px', height: '12px',
+                      border: '2px solid rgba(255,255,255,0.1)',
+                      borderTopColor: '#00d4ff',
+                      borderRadius: '50%',
+                      animation: 'spin 0.8s linear infinite',
+                      flexShrink: 0,
+                    }} />
+                    RUNNING IN SANDBOX…
+                  </>
+                ) : '▶  RUN & TEST CODE'}
+              </button>
+
+              {/* Results */}
+              {executionResult && (
+                <div style={{
+                  borderRadius: '14px',
+                  border: `1px solid ${executionResult.success
+                    ? 'rgba(0,232,122,0.2)'
+                    : 'rgba(245,158,11,0.2)'}`,
+                  overflow: 'hidden',
+                }}>
+
+                  {/* Plain English summary — what non-technical users read */}
+                  <div style={{
+                    padding: '20px 24px',
+                    background: executionResult.success
+                      ? 'rgba(0,232,122,0.04)'
+                      : 'rgba(245,158,11,0.04)',
+                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                  }}>
+                    <p style={{
+                      fontFamily: "'Orbitron', monospace",
+                      fontSize: '11px', fontWeight: 700,
+                      letterSpacing: '0.12em',
+                      color: executionResult.success ? '#00e87a' : '#f59e0b',
+                      marginBottom: '10px',
+                    }}>
+                      {executionResult.success
+                        ? 'EXECUTION SUCCESSFUL'
+                        : 'COMPLETED WITH WARNINGS'}
+                    </p>
+                    <p style={{
+                      fontSize: '15px', lineHeight: 1.8,
+                      color: '#8b90a8',
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontWeight: 300,
+                    }}>
+                      {executionResult.summary}
+                    </p>
+                  </div>
+
+                  {/* Technical output — hidden by default, click to expand */}
+                  {(executionResult.output || executionResult.error || executionResult.test_results) && (
+                    <details style={{ background: 'rgba(6,10,15,0.8)' }}>
+                      <summary style={{
+                        padding: '12px 24px',
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: '12px', color: '#3a4a5c',
+                        cursor: 'pointer', userSelect: 'none',
+                        listStyle: 'none',
+                      }}>
+                        ▸ Technical output (click to expand)
+                      </summary>
+
+                      <div style={{ padding: '0 24px 20px' }}>
+
+                        {executionResult.output && (
+                          <>
+                            <p style={{
+                              fontFamily: "'JetBrains Mono', monospace",
+                              fontSize: '11px', color: '#3a4a5c',
+                              textTransform: 'uppercase',
+                              margin: '16px 0 8px',
+                            }}>
+                              Program Output
+                            </p>
+                            <pre style={{
+                              fontFamily: "'JetBrains Mono', monospace",
+                              fontSize: '12px', lineHeight: 1.8,
+                              color: '#00e87a',
+                              background: 'rgba(0,0,0,0.3)',
+                              padding: '14px 16px', borderRadius: '8px',
+                              whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                              margin: 0,
+                              border: '1px solid rgba(0,232,122,0.1)',
+                            }}>
+                              {executionResult.output}
+                            </pre>
+                          </>
+                        )}
+
+                        {executionResult.error && (
+                          <>
+                            <p style={{
+                              fontFamily: "'JetBrains Mono', monospace",
+                              fontSize: '11px', color: '#3a4a5c',
+                              textTransform: 'uppercase',
+                              margin: '16px 0 8px',
+                            }}>
+                              Errors
+                            </p>
+                            <pre style={{
+                              fontFamily: "'JetBrains Mono', monospace",
+                              fontSize: '12px', lineHeight: 1.8,
+                              color: '#f87171',
+                              background: 'rgba(0,0,0,0.3)',
+                              padding: '14px 16px', borderRadius: '8px',
+                              whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                              margin: 0,
+                              border: '1px solid rgba(255,68,68,0.1)',
+                            }}>
+                              {executionResult.error}
+                            </pre>
+                          </>
+                        )}
+
+                        {executionResult.test_results && (
+                          <>
+                            <p style={{
+                              fontFamily: "'JetBrains Mono', monospace",
+                              fontSize: '11px', color: '#3a4a5c',
+                              textTransform: 'uppercase',
+                              margin: '16px 0 8px',
+                            }}>
+                              Test Report
+                            </p>
+                            <pre style={{
+                              fontFamily: "'JetBrains Mono', monospace",
+                              fontSize: '12px', lineHeight: 1.8,
+                              color: '#5db8ff',
+                              background: 'rgba(0,0,0,0.3)',
+                              padding: '14px 16px', borderRadius: '8px',
+                              whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                              margin: 0,
+                              border: '1px solid rgba(0,212,255,0.1)',
+                            }}>
+                              {executionResult.test_results}
+                            </pre>
+                          </>
+                        )}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {/* Cancel while running */}
           {isRunning && !isWaiting && (
             <div style={{ textAlign: 'right', marginTop: '16px' }}>
