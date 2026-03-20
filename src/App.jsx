@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import AgentCard from './components/AgentCard';
 import OutputPanel from './components/OutputPanel';
 
@@ -1150,6 +1151,9 @@ export default function App() {
       <div style={S.footer}>
         DEVRON | MULTI-AGENT AI SYSTEM
       </div>
+      
+      {/* ── ANALYTICS ── */}
+      <Analytics />
     </div>
   );
 }
