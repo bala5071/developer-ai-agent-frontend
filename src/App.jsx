@@ -861,6 +861,64 @@ export default function App() {
                   ? 'The project has been deployed. Review the output, then approve or request changes.'
                   : 'Review the plan below, then approve to proceed or request modifications.'}
               </p>
+              {/* E2B execution results — shown during waiting_review so user can make informed decisions */}
+              {pipelineStatus?.status === 'waiting_review' && pipelineStatus?.execution_result && (
+                <div style={{
+                  marginBottom: '18px',
+                  borderRadius: '10px',
+                  border: `1px solid ${pipelineStatus.execution_result.success
+                    ? 'rgba(0,232,122,0.2)' : 'rgba(245,158,11,0.2)'}`,
+                  overflow: 'hidden',
+                }}>
+                  <div style={{
+                    padding: '14px 18px',
+                    background: pipelineStatus.execution_result.success
+                      ? 'rgba(0,232,122,0.04)' : 'rgba(245,158,11,0.04)',
+                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                  }}>
+                    <p style={{
+                      fontFamily: "'Orbitron', monospace",
+                      fontSize: '11px', fontWeight: 700,
+                      letterSpacing: '0.1em',
+                      color: pipelineStatus.execution_result.success ? '#00e87a' : '#f59e0b',
+                      marginBottom: '8px',
+                    }}>
+                      {pipelineStatus.execution_result.success
+                        ? '✓ CODE TESTED SUCCESSFULLY'
+                        : '⚠ CODE TESTED WITH WARNINGS'}
+                    </p>
+                    <p style={{
+                      fontSize: '14px', lineHeight: 1.7,
+                      color: '#8b90a8',
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontWeight: 300,
+                    }}>
+                      {pipelineStatus.execution_result.summary}
+                    </p>
+                  </div>
+                  {pipelineStatus.execution_result.output && (
+                    <details style={{ background: 'rgba(6,10,15,0.8)' }}>
+                      <summary style={{
+                        padding: '10px 18px', cursor: 'pointer',
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: '12px', color: '#3a4a5c',
+                        listStyle: 'none', userSelect: 'none',
+                      }}>
+                        ▸ View program output
+                      </summary>
+                      <pre style={{
+                        padding: '12px 18px', margin: 0,
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: '12px', color: '#00e87a',
+                        whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                      }}>
+                        {pipelineStatus.execution_result.output}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+
 
               {/* Plan preview */}
               {currentPlan && (
